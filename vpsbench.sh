@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ================================================================
-# VPSBench v1.0.0
+# VPSBench v1.0.1
 # Simple VPS Benchmark Script (CPU / Disk / Network / Virtualization)
 #
 # Project : https://vpsbench.com
@@ -12,6 +12,14 @@ set -euo pipefail
 
 VERSION="1.0.0"
 START_TIME=$(date +%s)
+
+# ---------- Root Check ----------
+if [ "$(id -u)" -ne 0 ]; then
+    echo "This script requires sudo (root) privileges." >&2
+    echo "Please run it again as follows:" >&2
+    echo "  sudo $0" >&2
+    exit 1
+fi
 
 WORK_DIR="/tmp/vpsbench_$(date +%s)"
 mkdir -p "$WORK_DIR"
@@ -56,7 +64,8 @@ sysinfo(){
 
     OS=$(grep PRETTY_NAME /etc/os-release | cut -d '"' -f2)
     KERNEL=$(uname -r)
-    CPU=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2 | xargs)
+    CPU=$(lscpu | awk -F: '/Model name/ {gsub(/^[ \t]+/, "", $2); print $2; exit}')
+    CPU=${CPU:-Unknown}
     CORES=$(nproc)
 
     CPU_MHZ=$(awk -F: '/cpu MHz/{s+=$2;n++} END{if(n) printf "%.0f",s/n}' /proc/cpuinfo)
@@ -69,7 +78,7 @@ sysinfo(){
 
     VMTYPE=$(systemd-detect-virt 2>/dev/null || echo "Dedicated")
 
-    # ---- 虚拟化增强 ----
+    # ---- Virtualization Enhancement ----
     VIRT_EXT=$(egrep -c '(vmx|svm)' /proc/cpuinfo || true)
     VIRT_STATUS=$( [ "$VIRT_EXT" -gt 0 ] && echo 1 || echo 0 )
 
@@ -115,6 +124,7 @@ disk_test(){
         local out="$WORK_DIR/fio_${bs}.json"
 
         fio --name=bench --rw=randrw --rwmixread=50 \
+            --filename="$WORK_DIR/fio_${bs}.dat" \
             --bs="$bs" --size=256M --runtime=6 \
             --time_based --group_reporting \
             --output-format=json > "$out" 2>/dev/null || return
@@ -153,15 +163,27 @@ net_test(){
         local name="$1"
         local url="$2"
 
-        local speed mbps
-        speed=$(curl -o /dev/null -s --max-time 15 -w "%{speed_download}" "$url" || echo 0)
-        mbps=$(awk "BEGIN{printf \"%.2f\", $speed*8/1000000}")
+        local out http speed mbps
+        # curl exits non-zero when --max-time cuts off a large file mid-download,
+        # but still prints http_code/speed. Keep that output; judge by http_code.
+        out=$(curl -o /dev/null -s --max-time 15 \
+            -w "%{http_code} %{speed_download}" "$url" 2>/dev/null || true)
+        [ -z "$out" ] && out="000 0"
+        http=${out%% *}
+        speed=${out##* }
+
+        if [ "$http" = "200" ] && awk "BEGIN{exit !($speed>0)}" 2>/dev/null; then
+            mbps=$(awk "BEGIN{printf \"%.2f\", $speed*8/1000000}")
+        else
+            mbps="N/A"
+        fi
 
         echo "$name|$mbps" >> "$TMP_NET"
     }
 
     test_node "Cloudflare" "https://speed.cloudflare.com/__down?bytes=20000000" &
     test_node "CacheFly" "http://cachefly.cachefly.net/100mb.test" &
+    test_node "Seoul" "https://sel-kor-ping.vultr.com/vultr.com.100MB.bin" &
     test_node "Tokyo" "https://speedtest.tokyo2.linode.com/100MB-tokyo.bin" &
     test_node "Singapore" "https://speedtest.singapore.linode.com/100MB-singapore.bin" &
     test_node "Los Angeles" "https://la.speedtest.clouvider.net/1g.bin" &

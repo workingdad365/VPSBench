@@ -42,7 +42,7 @@ curl -fsSL https://vpsbench.com/vpsbench.sh | bash
 * Multiple global test nodes:
 
   * Cloudflare (CDN baseline)
-  * Tokyo / Singapore (Asia)
+  * Seoul / Tokyo / Singapore (Asia)
   * Los Angeles / New York (US)
   * Frankfurt (EU)
 * Measures real-world download throughput
@@ -153,6 +153,13 @@ Completed in 27s
 | Mixed IO workload     | ✔              | ✘               |
 | Nested virtualization | ✔              | ✘               |
 | Clean output          | ✔              | ✘               |
+
+---
+
+## What's New
+
+* Added support for the ARM 64-bit (aarch64) architecture, so the benchmark now runs on ARM-based servers as well.
+* Added a Seoul zone to the network test nodes for more accurate throughput measurements in the Korean region.
 
 ---
 
